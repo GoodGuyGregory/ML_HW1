@@ -3,7 +3,8 @@ import numpy as np
 from sklearn.metrics import confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
-import copy
+import time
+
 
 
 
@@ -13,58 +14,43 @@ import copy
 class Perceptron_Optimizer:
 
     def backward(self, perceptronLayer, truthVector, input):
-
+        # startTime = time.time()
         #  determine accuracy
         perceptronLayer.updateAccuracy(truthVector)
 
         # if no backprop done before
-        if perceptronLayer.prevOutputWeightsDelta is None:
-            # compute the error at the output:
-            inputActivationsDiff = 1 - perceptronLayer.outputLogits
-            truthVectorDiff = truthVector - perceptronLayer.outputLogits
-            # based on the equation from the notes.
-            deltaKError = perceptronLayer.outputLogits * np.dot(inputActivationsDiff, truthVectorDiff)
 
-            #  compute the error for the hidden layer
+        # compute the error at the output:
+        inputActivationsDiff = 1 - perceptronLayer.outputLogits
+        truthVectorDiff = truthVector - perceptronLayer.outputLogits
+        # based on the equation from the notes.
+        deltaKError = perceptronLayer.outputLogits * inputActivationsDiff * truthVectorDiff  # 10, 1
 
-            hiddenError = 1.0 - perceptronLayer.hiddenLogits
-            hiddenDelta = perceptronLayer.hiddenLogits * hiddenError * np.dot(perceptronLayer.hWeights, deltaKError)
+        #  compute the error for the hidden layer
+        hiddenError = 1.0 - np.append(perceptronLayer.hiddenLogits, 1)
+        # outer will allow for the deltaKError [10x1] to be combined with the [20x1]
+        # to form a [20 x 10]
+        # print(perceptronLayer.hiddenLogits.shape)
+        hiddenDelta = np.append(perceptronLayer.hiddenLogits, 1) * hiddenError * np.dot(perceptronLayer.hWeights, deltaKError)
 
-            #  no momentum is required as there is no previous weight to multiply by
-            # update the hidden to output weights.
-            perceptronLayer.hweights = perceptronLayer.eta * np.outer(perceptronLayer.hiddenLogits.T, deltaKError)
-            # update the input to the hidden weights
-            perceptronLayer.weights = perceptronLayer.eta * np.outer(input, hiddenDelta)
-            #      set the previous weights for later momentum calculations:
-            perceptronLayer.prevHiddenWeightDelta = perceptronLayer.hWeights
-            perceptronLayer.prevOutputWeightsDelta = perceptronLayer.weights
+        #  no momentum is required as there is no previous weight to multiply by
+        # update the hidden to output weights.
+        perceptronLayer.hWeights += (perceptronLayer.eta * np.outer(deltaKError, np.append(perceptronLayer.hiddenLogits, 1))).T
+        # update the input to the hidden weights
+        perceptronLayer.weights += perceptronLayer.eta * np.outer(hiddenDelta[:-1], input).T
 
-        else:
-            # compute the error at the output:
-            inputActivationsDiff = 1 - perceptronLayer.outputLogits
-            truthVectorDiff = truthVector - perceptronLayer.outputLogits
-            # based on the equation from the notes.
-            deltaKError = perceptronLayer.outputLogits * np.dot(inputActivationsDiff, truthVectorDiff)
+        #      set the previous weights for later momentum calculations:
+        perceptronLayer.prevHiddenWeightDelta = perceptronLayer.hWeights
+        perceptronLayer.prevOutputWeightsDelta = perceptronLayer.weights
+        # print(time.time() - startTime , "BackProp")
 
-            #  compute the error for the hidden layer
-
-            hiddenError = 1.0 - perceptronLayer.hiddenLogits
-            hiddenDelta = perceptronLayer.hiddenLogits * hiddenError * np.dot(perceptronLayer.hWeights, deltaKError)
-
-            # hidden-to-output weights
-            perceptronLayer.hweights = perceptronLayer.eta * np.dot(deltaKError, perceptronLayer.hiddenLogits.T) + (perceptronLayer.momentum * perceptronLayer.prevHiddenWeightDelta)
-            # input-to-hidden
-            perceptronLayer.weights = perceptronLayer.eta * np.dot(hiddenDelta, input) + (perceptronLayer.momentum * perceptronLayer.prevOutputWeightsDelta)
-
-            # set new previous for the next cycle.
-            perceptronLayer.prevHiddenWeightDelta = perceptronLayer.hWeights
-            perceptronLayer.prevOutputWeightsDelta = perceptronLayer.weights
 
 
     #  produces on hot encoded sigmoid vector
     def convertTruth(self, Y):
-        groundTruth = np.zeros(10,dtype='float')
+        groundTruth = np.ones(10, dtype='float') * 0.1
         groundTruth[Y] = 0.9
+
         return groundTruth
 
 
@@ -77,20 +63,18 @@ class Perceptron_Layer:
         #  standard input weights
         self.weights = np.random.uniform(low=-0.5, high=0.5, size=(n_inputs + 1, h_neurons))
         # add a bias term inside each weight vector
-        self.weights[-1] = 1
 
         # hidden weights.
-        self.hWeights = np.random.uniform(low=-0.5, high=0.5, size=(h_neurons, n_neurons))
+        self.hWeights = np.random.uniform(low=-0.5, high=0.5, size=(h_neurons + 1, n_neurons))
         # add a bias term inside each weight vector
-        self.hWeights[-1] = 1
 
         self.hiddenLogits = []
 
         self.outputLogits = []
 
         #  Place holders for now.
-        self.prevHiddenWeightDelta = None
-        self.prevOutputWeightsDelta = None
+        self.prevHiddenWeightDelta = 0
+        self.prevOutputWeightsDelta = 0
 
         self.accuracy = 0.0
         self.accurateCount = 0
@@ -103,18 +87,26 @@ class Perceptron_Layer:
 
     #  append the bias.
     def forward(self, input):
+        # startTime = time.time()
         #  convert the target to a vector representation
 
+        # original [784, 1]
         # inputs [785x1] dot [785 x N] + [1xN]
         layerOneLogits = np.dot(input.T, self.weights)
         self.hiddenLogits = self.sigmoid(layerOneLogits)
+
+        # print(self.hiddenLogits.shape)
+        # self.hiddenLogits = np.append(self.hiddenLogits, 1)
         # hWeights [10 x 50] dot [1x50]
-        hiddenLayerLogits = np.dot(self.hWeights.T, self.hiddenLogits.T) + 1
+        # print(self.hWeights.shape)
+        hiddenLayerLogits = np.dot(self.hWeights.T, np.append(self.hiddenLogits, 1).T)
+
         # activation function
         self.outputLogits = self.sigmoid(hiddenLayerLogits)
 
 
         self.inputSize += 1
+        # print(time.time() - startTime, "Forward")
 
 
 
@@ -237,19 +229,24 @@ def main():
     # read in the MNIST data:
 
     normalizedInputs = shuffleTrainData()
+
+    Y = getTrainingLabels(normalizedInputs)
+    x = getTrainingInputs(normalizedInputs)
+
+
     batch = 0
     #  add loop to control epoch count
-    perceptronLayer = Perceptron_Layer(784, 10,20, 0.1, 0.9)
-    while batch < len(normalizedInputs):
-        print("batch:" +  str(batch))
-        Y = getTrainingLabels(normalizedInputs)
-        x = getTrainingInputs(normalizedInputs)
+    perceptronLayer = Perceptron_Layer(784, 10, 100, 0.1, 0.9)
+
+    perceptronOptimizer = Perceptron_Optimizer()
+    while batch < 49000:
+        # print("batch:" +  str(batch))
+
 
         #  forward pass through the connected input layer and connected layer.
 
         perceptronLayer.forward(x[batch])
 
-        perceptronOptimizer = Perceptron_Optimizer()
         #  convert truth value
         groundTruth = perceptronOptimizer.convertTruth(Y[batch])
 
