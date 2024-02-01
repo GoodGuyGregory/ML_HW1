@@ -32,16 +32,18 @@ class Perceptron_Optimizer:
         # update the hidden to output weights.
         # perceptronLayer.hWeights += perceptronLayer.eta * np.outer(deltaKError, np.append(perceptronLayer.hiddenLogits, 1)).T
         # This is the line that is implemented from the slides as specified but is causing problems
-        perceptronLayer.hWeights += (perceptronLayer.eta * np.outer(deltaKError, np.append(perceptronLayer.hiddenLogits, 1)).T) + (perceptronLayer.momentum * perceptronLayer.prevHiddenWeightDelta)
+        hiddenWeightDelta = perceptronLayer.eta * np.outer(deltaKError, np.append(perceptronLayer.hiddenLogits, 1)).T
+        perceptronLayer.hWeights += hiddenWeightDelta + (perceptronLayer.momentum * perceptronLayer.prevHiddenWeightDelta)
 
         # update the input to the hidden weights
         # perceptronLayer.weights += perceptronLayer.eta * np.outer(hiddenDelta[:-1], input).T
         # This is the line that is implemented from the slides as specified but is causing problems
-        perceptronLayer.weights += (perceptronLayer.eta * np.outer(hiddenDelta[:-1], input).T) + (perceptronLayer.momentum * perceptronLayer.prevOutputWeightsDelta)
+        inputWeightDelta = perceptronLayer.eta * np.outer(hiddenDelta[:-1], input).T
+        perceptronLayer.weights += inputWeightDelta + (perceptronLayer.momentum * perceptronLayer.prevInputWeightDelta)
 
         #      set the previous weights for later momentum calculations:
-        perceptronLayer.prevHiddenWeightDelta = copy.deepcopy(perceptronLayer.hWeights)
-        perceptronLayer.prevOutputWeightsDelta = copy.deepcopy(perceptronLayer.weights)
+        perceptronLayer.prevHiddenWeightDelta = hiddenWeightDelta
+        perceptronLayer.prevInputWeightDelta = inputWeightDelta
         # print(time.time() - startTime , "BackProp")
 
 
@@ -73,8 +75,8 @@ class Perceptron_Layer:
 
         # initialize weights to 0 sized arrays similar to the hWeights and weights
 
-        self.prevHiddenWeightDelta = np.zeros_like(self.hWeights)
-        self.prevOutputWeightsDelta = np.zeros_like(self.weights)
+        self.prevHiddenWeightDelta = np.zeros((h_neurons+1,n_neurons))
+        self.prevInputWeightDelta = np.zeros((n_inputs+1,h_neurons))
 
         self.accuracy = 0.0
         self.accurateCount = 0
