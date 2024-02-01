@@ -4,21 +4,17 @@ from sklearn.metrics import confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
 import time
+import copy
 
 
 
 
-# TODO: Increase input vector capacity to feature a bias feature.
-# Process forward propagation with the sigmoid function swashing
-# create a backward method that will handle weight updates based on the algorithm in class.
 class Perceptron_Optimizer:
 
     def backward(self, perceptronLayer, truthVector, input):
         # startTime = time.time()
         #  determine accuracy
         perceptronLayer.updateAccuracy(truthVector)
-
-        # if no backprop done before
 
         # compute the error at the output:
         inputActivationsDiff = 1 - perceptronLayer.outputLogits
@@ -28,22 +24,25 @@ class Perceptron_Optimizer:
 
         #  compute the error for the hidden layer
         hiddenError = 1.0 - np.append(perceptronLayer.hiddenLogits, 1)
-        # outer will allow for the deltaKError [10x1] to be combined with the [20x1]
-        # to form a [20 x 10]
+        # outer will allow for the deltaKError [10x1] to be combined with the [Nx1]
+        # to form a [20 x 10], [50 x 10]. [100 x 10]
         # print(perceptronLayer.hiddenLogits.shape)
         hiddenDelta = np.append(perceptronLayer.hiddenLogits, 1) * hiddenError * np.dot(perceptronLayer.hWeights, deltaKError)
 
-        #  no momentum is required as there is no previous weight to multiply by
         # update the hidden to output weights.
-        perceptronLayer.hWeights += (perceptronLayer.eta * np.outer(deltaKError, np.append(perceptronLayer.hiddenLogits, 1))).T
+        # perceptronLayer.hWeights += perceptronLayer.eta * np.outer(deltaKError, np.append(perceptronLayer.hiddenLogits, 1)).T
+        # This is the line that is implemented from the slides as specified but is causing problems
+        perceptronLayer.hWeights += (perceptronLayer.eta * np.outer(deltaKError, np.append(perceptronLayer.hiddenLogits, 1)).T) + (perceptronLayer.momentum * perceptronLayer.prevHiddenWeightDelta)
+
         # update the input to the hidden weights
-        perceptronLayer.weights += perceptronLayer.eta * np.outer(hiddenDelta[:-1], input).T
+        # perceptronLayer.weights += perceptronLayer.eta * np.outer(hiddenDelta[:-1], input).T
+        # This is the line that is implemented from the slides as specified but is causing problems
+        perceptronLayer.weights += (perceptronLayer.eta * np.outer(hiddenDelta[:-1], input).T) + (perceptronLayer.momentum * perceptronLayer.prevOutputWeightsDelta)
 
         #      set the previous weights for later momentum calculations:
-        perceptronLayer.prevHiddenWeightDelta = perceptronLayer.hWeights
-        perceptronLayer.prevOutputWeightsDelta = perceptronLayer.weights
+        perceptronLayer.prevHiddenWeightDelta = copy.deepcopy(perceptronLayer.hWeights)
+        perceptronLayer.prevOutputWeightsDelta = copy.deepcopy(perceptronLayer.weights)
         # print(time.time() - startTime , "BackProp")
-
 
 
     #  produces on hot encoded sigmoid vector
@@ -61,20 +60,21 @@ class Perceptron_Layer:
         self.momentum = momentum
 
         #  standard input weights
-        self.weights = np.random.uniform(low=-0.5, high=0.5, size=(n_inputs + 1, h_neurons))
+        self.weights = np.random.uniform(low=-0.05, high=0.05, size=(n_inputs + 1, h_neurons))
         # add a bias term inside each weight vector
 
         # hidden weights.
-        self.hWeights = np.random.uniform(low=-0.5, high=0.5, size=(h_neurons + 1, n_neurons))
+        self.hWeights = np.random.uniform(low=-0.05, high=0.05, size=(h_neurons + 1, n_neurons))
         # add a bias term inside each weight vector
 
         self.hiddenLogits = []
 
         self.outputLogits = []
 
-        #  Place holders for now.
-        self.prevHiddenWeightDelta = 0
-        self.prevOutputWeightsDelta = 0
+        # initialize weights to 0 sized arrays similar to the hWeights and weights
+
+        self.prevHiddenWeightDelta = np.zeros_like(self.hWeights)
+        self.prevOutputWeightsDelta = np.zeros_like(self.weights)
 
         self.accuracy = 0.0
         self.accurateCount = 0
@@ -233,31 +233,39 @@ def main():
     Y = getTrainingLabels(normalizedInputs)
     x = getTrainingInputs(normalizedInputs)
 
-
-    batch = 0
+    epoch = 0
+    # batch = 0
     #  add loop to control epoch count
-    perceptronLayer = Perceptron_Layer(784, 10, 100, 0.1, 0.9)
+    perceptronLayer = Perceptron_Layer(784, 10, 50, 0.1, 0.9)
 
     perceptronOptimizer = Perceptron_Optimizer()
-    while batch < 49000:
-        # print("batch:" +  str(batch))
+
+    while epoch <= 50:
+        print("epoch" + str(epoch))
+        batch = 0
+        normalizedInputs = shuffleTrainData()
+
+        Y = getTrainingLabels(normalizedInputs)
+        x = getTrainingInputs(normalizedInputs)
+        while batch < len(normalizedInputs):
+            # print("batch:" +  str(batch))
 
 
-        #  forward pass through the connected input layer and connected layer.
+            #  forward pass through the connected input layer and connected layer.
 
-        perceptronLayer.forward(x[batch])
+            perceptronLayer.forward(x[batch])
 
-        #  convert truth value
-        groundTruth = perceptronOptimizer.convertTruth(Y[batch])
+            #  convert truth value
+            groundTruth = perceptronOptimizer.convertTruth(Y[batch])
 
-        #  backward pass will update the current neuron
-        #  update it's weights based on error.
-        perceptronOptimizer.backward(perceptronLayer, groundTruth, x[batch])
+            #  backward pass will update the current neuron
+            #  update it's weights based on error.
+            perceptronOptimizer.backward(perceptronLayer, groundTruth, x[batch])
 
-        batch += 1
-        if batch % 5 == 0:
-            perceptronLayer.displayAccuracy()
-
+            batch += 1
+            if batch % 5 == 0:
+                perceptronLayer.displayAccuracy()
+        epoch += 1
     print("done training")
 
 
