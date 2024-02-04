@@ -3,8 +3,8 @@ import numpy as np
 from sklearn.metrics import confusion_matrix
 import seaborn as sns
 import matplotlib.pyplot as plt
+import math
 import time
-import copy
 
 
 
@@ -78,17 +78,22 @@ class Perceptron_Layer:
         self.prevHiddenWeightDelta = np.zeros((h_neurons+1,n_neurons))
         self.prevInputWeightDelta = np.zeros((n_inputs+1,h_neurons))
 
+        # confusion matrix variables:
+        self.y_predictions = []
+        self.y_truths = []
+
         self.accuracy = 0.0
         self.accurateCount = 0
         self.incorrect = 0
         self.inputSize = 0
 
     def sigmoid(self, x):
+        x = np.array(x)
         x *= -1
         return 1 / (1 + np.exp(x))
 
     #  append the bias.
-    def forward(self, input):
+    def forward(self, input, confusion_matrix):
         # startTime = time.time()
         #  convert the target to a vector representation
 
@@ -106,31 +111,37 @@ class Perceptron_Layer:
         # activation function
         self.outputLogits = self.sigmoid(hiddenLayerLogits)
 
+        if confusion_matrix:
+            # used to store predictions for confusion matrix
+            self.y_predictions.append(self.outputLogits)
+
 
         self.inputSize += 1
         # print(time.time() - startTime, "Forward")
 
 
 
-    def displayAccuracy(self):
+    def displayAccuracy(self, modelType):
         if self.inputSize == 0:
             print("No input data. Accuracy set to 0.")
             self.accuracy = 0.0
         else:
             self.accuracy = round((self.accurateCount / self.inputSize) * 100, 2)
-            print("Accuracy: " + str(self.accuracy) + "%")
+            print(modelType + " Accuracy: " + str(self.accuracy) + "%")
+
 
     def updateAccuracy(self, truthVector):
         if np.argmax(truthVector) == np.argmax(self.outputLogits):
             self.accurateCount += 1
 
     def calculateConfusionMatrix(self):
-        cm = confusion_matrix(self.grounds, self.potentials)
-        return cm
+        # specified the argMax as the truths and predictions
+        y_truths = np.concatenate(self.y_truths).reshape(-1, 10)
+        y_predictions = np.concatenate(self.y_predictions).reshape(-1, 10)
 
-    def displayConfusionMatrix(self, cm):
-        print("Confusion Matrix:")
-        print(cm)
+        # Build the confusion matrix
+        cm = confusion_matrix(y_truths.argmax(axis=1), y_predictions.argmax(axis=1))
+        return cm
 
     def plotConfusionMatrix(self, cm, testType):
         plt.figure(figsize=(8, 6))
@@ -139,6 +150,7 @@ class Perceptron_Layer:
         plt.title("Confusion Matrix " + str(testType))
         plt.xlabel("Predicted Label")
         plt.ylabel("True Label")
+        plt.savefig('100_hidden_neuron_layer_momentum_0.0_confusion_matrix.png')
         plt.show()
 
     def clearAccuracy(self):
@@ -146,29 +158,22 @@ class Perceptron_Layer:
         self.accurateCount = 0
         self.incorrect = 0
         self.inputSize = 0
-        self.grounds = []
-        self.potentials = []
 
-    def plotInitialAccuracy(self, accuracies):
-        plt.figure(figsize=(8, 6))
-        plt.plot(np.arange(1, len(accuracies) + 1), accuracies, marker='o')
-        plt.title("Accuracy Over Epochs")
-        plt.xlabel("Batch")
-        plt.ylabel("Accuracy (%)")
-        plt.grid(True)
-        plt.show()
 
-    def plotAccuracyOverTestTrainingEpochs(self, trainAccuracies, testAccuracies, epochs):
+
+    def plotAccuracyOverTestTrainingEpochs(self, trainAccuracies, testAccuracies, epochs, title):
         plt.figure(figsize=(8, 6))
-        plt.plot(trainAccuracies, marker='o')
-        plt.plot(testAccuracies, marker='o')
-        plt.title("Accuracy Over Epochs Against Test Samples")
-        plt.xlabel("Batch")
+        plt.plot(trainAccuracies, marker='o', label='Training Accuracy')
+        plt.plot(testAccuracies, marker='o', label='Test Accuracy')
+        plt.title(title)
+        plt.xlabel("Epoch")
         plt.ylabel("Accuracy (%)")
-        # plt.xticks(np.arange(0, epochs), fontsize=12)
-        # # Set the number of intervals on the y-axis
-        # plt.yticks(np.arange(0, 100, step=15))
+        plt.xticks(np.arange(0, epochs, step=5))  # Adjust the step according to your data
+        plt.yticks(np.arange(80, 100, step=1))  # Adjust the step according to your data
+        plt.ylim(80, 100)  # Set y-axis limits for better visualization
+        plt.legend()  # Add legend to differentiate between training and test accuracies
         plt.grid(True)
+        plt.savefig('100_hidden_neuron_layer_momentum_0_accuracy.png')
         plt.show()
 
     def plotTestAccuracySingleEpoch(self, testAccuracies):
@@ -188,7 +193,6 @@ def getTrainingLabels(dataFrame):
 
 
 def getTrainingInputs(dataFrame):
-
     dataFrame['bias'] = 255
     inputs = dataFrame.drop("label", axis=1).to_numpy()
     # divide each value vector by 255...
@@ -203,18 +207,35 @@ def shuffleTrainData():
     shuffledMnistData = mnist_data.sample(frac=1)
     return shuffledMnistData
 
+def splitTrainingData(splitRatio):
+    #  opens the training data
+    mnist_data = pd.read_csv("mnist_train.csv")
+    # determines the split size
+    trainingQty_split = len(mnist_data) * splitRatio
+    #  determines number needed to evenly divide per output values 0-9
+    needed_input_qty_per_output = int(math.floor(trainingQty_split / 10))
 
-def getTesingLabels(dataFrame):
+    #  concatenates the rand 0-9 for the input data based on label and sample size
+    splitTrainingDF = pd.concat([
+        mnist_data[mnist_data['label'] == i].sample(needed_input_qty_per_output)
+        for i in range(10)
+    ], ignore_index=True)
+    # shuffles the data
+    return splitTrainingDF.sample(frac=1)
+
+
+def getTestingLabels(dataFrame):
     groundTruthTestLables = dataFrame['label'].to_numpy()
     # drop the labels of the data and then divide each array
     return groundTruthTestLables
 
 
 def getTestingInputs(dataFrame):
+    dataFrame['bias'] = 255
     inputs = dataFrame.drop("label", axis=1).to_numpy()
     # divide each value vector by 255...
-    normalizedTestInputs = inputs / 255
-    return normalizedTestInputs
+    normalizedInputs = inputs / 255
+    return normalizedInputs
 
 
 def shuffleTestData():
@@ -228,47 +249,248 @@ def shuffleTestData():
 # input 785 inputs within 10 perceptrons each input is a vector of 785 ie 28x28+1 (+1 for bias)
 
 def main():
-    # read in the MNIST data:
-
-    normalizedInputs = shuffleTrainData()
-
-    Y = getTrainingLabels(normalizedInputs)
-    x = getTrainingInputs(normalizedInputs)
-
-    epoch = 0
+    train_epoch = 0
     # batch = 0
     #  add loop to control epoch count
-    perceptronLayer = Perceptron_Layer(784, 10, 50, 0.1, 0.9)
+    perceptronLayerOne = Perceptron_Layer(784, 10, 100, 0.1, 0.9)
 
     perceptronOptimizer = Perceptron_Optimizer()
 
-    while epoch <= 50:
-        print("epoch" + str(epoch))
-        batch = 0
-        normalizedInputs = shuffleTrainData()
+    # create lists to hold the training results for graphing.
+    trainingDataAccuracyResults = []
+    testingDataAccuracyResults = []
 
-        Y = getTrainingLabels(normalizedInputs)
-        x = getTrainingInputs(normalizedInputs)
-        while batch < len(normalizedInputs):
-            # print("batch:" +  str(batch))
+    while train_epoch < 50:
+        print("Training and Test Epoch " + str(train_epoch) + ":")
+        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+        train_batch = 0
 
+        normalizedTrainingInputs = shuffleTrainData()
 
+        # EXPERIMENT #3:
+        # uncomment
+        # sub splits and shuffles the training data
+        # normalizedTrainingInputs = splitTrainingData(.25)
+
+        Y_train = getTrainingLabels(normalizedTrainingInputs)
+        x_train = getTrainingInputs(normalizedTrainingInputs)
+        print("Training Epoch: ")
+        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+        while train_batch < len(normalizedTrainingInputs):
+            print("Training batch:" +  str(train_batch))
             #  forward pass through the connected input layer and connected layer.
 
-            perceptronLayer.forward(x[batch])
+            #  second argument for confusion matrix
+            perceptronLayerOne.forward(x_train[train_batch], False)
 
             #  convert truth value
-            groundTruth = perceptronOptimizer.convertTruth(Y[batch])
+            train_groundTruth = perceptronOptimizer.convertTruth(Y_train[train_batch])
 
             #  backward pass will update the current neuron
             #  update it's weights based on error.
-            perceptronOptimizer.backward(perceptronLayer, groundTruth, x[batch])
+            perceptronOptimizer.backward(perceptronLayerOne, train_groundTruth, x_train[train_batch])
 
-            batch += 1
-            if batch % 5 == 0:
-                perceptronLayer.displayAccuracy()
-        epoch += 1
+            # after each epoch calculate the accuracy of the training data with this model
+            perceptronLayerOne.displayAccuracy("Training Model")
+            train_batch += 1
+        trainingDataAccuracyResults.append(perceptronLayerOne.accuracy)
+        perceptronLayerOne.clearAccuracy()
+
+        # Begins Testing Epoch
+
+        test_batch = 0
+        # run the trained model against the test data
+        normalizedTestInputs = shuffleTestData()
+
+        Y_test = getTestingLabels(normalizedTestInputs)
+        x_test = getTestingInputs(normalizedTestInputs)
+        print("Testing Epoch: ")
+        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+        while test_batch < len(normalizedTestInputs):
+            print("Testing batch:" + str(test_batch))
+            #  forward pass through the connected input layer and connected layer.
+
+            #  second argument for confusion matrix
+            perceptronLayerOne.forward(x_test[test_batch], False)
+
+            #  convert truth value
+            test_groundTruth = perceptronOptimizer.convertTruth(Y_test[test_batch])
+
+            #  backward pass will update the current neuron
+            #  update it's weights based on error.
+            perceptronOptimizer.backward(perceptronLayerOne, test_groundTruth, x_test[test_batch])
+
+            # after each epoch calculate the accuracy of the training data with this model
+            perceptronLayerOne.displayAccuracy("Test Model")
+            test_batch += 1
+        testingDataAccuracyResults.append(perceptronLayerOne.accuracy)
+        perceptronLayerOne.clearAccuracy()
+
+        train_epoch += 1
     print("done training")
+    print("plotting training and test data results")
+    perceptronLayerOne.plotAccuracyOverTestTrainingEpochs(trainingDataAccuracyResults, testingDataAccuracyResults, 50,"Accuracy Over Epochs Against Test with 100 Hidden Neurons 25% of the Training Data")
+
+    #  Final Test with Full Trained Model (50) epochs
+    final_test_batch_one = 0
+    finalTestingDataAccuracyResults = []
+    # run the trained model against the test data
+    normalizedFinalTestInputs = shuffleTestData()
+
+    Y_Finaltest = getTestingLabels(normalizedFinalTestInputs)
+    x_Finaltest = getTestingInputs(normalizedFinalTestInputs)
+
+    while final_test_batch_one < len(normalizedFinalTestInputs):
+        # print("batch:" +  str(batch))
+        #  forward pass through the connected input layer and connected layer.
+
+        #  notice the truth to add to the perceptronLayer's confusion matrix
+        # data structure
+        perceptronLayerOne.forward(x_Finaltest[final_test_batch_one], True)
+
+        #  convert truth value
+        test_groundTruth = perceptronOptimizer.convertTruth(Y_Finaltest[final_test_batch_one])
+
+        # appends the y_test_truth logits into the truths list for confusion matrix
+        perceptronLayerOne.y_truths.append(test_groundTruth)
+
+        #  backward pass will update the current neuron
+        #  update it's weights based on error.
+        perceptronOptimizer.backward(perceptronLayerOne, test_groundTruth, x_Finaltest[final_test_batch_one])
+
+        # after each epoch calculate the accuracy of the training data with this model
+        perceptronLayerOne.displayAccuracy("Full Trained Test Model")
+        final_test_batch_one += 1
+    finalTestingDataAccuracyResults.append(perceptronLayerOne.accuracy)
+    perceptronLayerOne.clearAccuracy()
+
+    perceptronLayerOne.plotConfusionMatrix(perceptronLayerOne.calculateConfusionMatrix(),"Trained Model 100 Hidden Neurons Provided 25% Training Examples")
+
+#     perceptron_layer #2 with .5 of the data
+
+
+#     Testing of the trained model for the confusion matrix results:
+
+# Experiment #3:
+# uncomment the lines below for the use of experiment #3
+
+# Train two MLP with differing percentages of the data.
+
+    # train_epoch_two = 0
+    # # batch = 0
+    # #  add loop to control epoch count
+    # perceptronLayerTwo = Perceptron_Layer(784, 10, 100, 0.1, 0.9)
+    #
+    # perceptronOptimizer = Perceptron_Optimizer()
+    #
+    # # create lists to hold the training results for graphing.
+    # trainingDataAccuracyResults = []
+    # testingDataAccuracyResults = []
+    #
+    # while train_epoch_two < 50:
+    #     print("Training and Test Epoch " + str(train_epoch_two) + ":")
+    #     print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    #     train_batch = 0
+    #
+    #     # EXPERIMENT #3:
+    #     normalizedTrainingInputs = splitTrainingData(.50)
+    #
+    #     Y_train = getTrainingLabels(normalizedTrainingInputs)
+    #     x_train = getTrainingInputs(normalizedTrainingInputs)
+    #     print("Training Epoch: ")
+    #     print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    #     while train_batch < len(normalizedTrainingInputs):
+    #         print("Training batch:" +  str(train_batch))
+    #         #  forward pass through the connected input layer and connected layer.
+    #
+    #         #  second argument for confusion matrix
+    #         perceptronLayerTwo.forward(x_train[train_batch], False)
+    #
+    #         #  convert truth value
+    #         train_groundTruth = perceptronOptimizer.convertTruth(Y_train[train_batch])
+    #
+    #         #  backward pass will update the current neuron
+    #         #  update it's weights based on error.
+    #         perceptronOptimizer.backward(perceptronLayerTwo, train_groundTruth, x_train[train_batch])
+    #
+    #         # after each epoch calculate the accuracy of the training data with this model
+    #         perceptronLayerTwo.displayAccuracy("Training Model")
+    #         train_batch += 1
+    #     trainingDataAccuracyResults.append(perceptronLayerTwo.accuracy)
+    #     perceptronLayerTwo.clearAccuracy()
+    #
+    #     # Begins Testing Epoch
+    #
+    #     test_batch_two = 0
+    #     # run the trained model against the test data
+    #     normalizedTestInputs = shuffleTestData()
+    #
+    #     Y_test = getTestingLabels(normalizedTestInputs)
+    #     x_test = getTestingInputs(normalizedTestInputs)
+    #     print("Testing Epoch: ")
+    #     print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+    #     while test_batch_two < len(normalizedTestInputs):
+    #         print("Testing batch:" + str(test_batch_two))
+    #         #  forward pass through the connected input layer and connected layer.
+    #
+    #         #  second argument for confusion matrix
+    #         perceptronLayerTwo.forward(x_test[test_batch_two], False)
+    #
+    #         #  convert truth value
+    #         test_groundTruth = perceptronOptimizer.convertTruth(Y_test[test_batch_two])
+    #
+    #         #  backward pass will update the current neuron
+    #         #  update it's weights based on error.
+    #         perceptronOptimizer.backward(perceptronLayerTwo, test_groundTruth, x_test[test_batch_two])
+    #
+    #         # after each epoch calculate the accuracy of the training data with this model
+    #         perceptronLayerTwo.displayAccuracy("Test Model")
+    #         test_batch_two += 1
+    #     testingDataAccuracyResults.append(perceptronLayerTwo.accuracy)
+    #     perceptronLayerTwo.clearAccuracy()
+    #
+    #     train_epoch_two += 1
+    # print("done training network two")
+    # print("plotting training and test data results")
+    # perceptronLayerTwo.plotAccuracyOverTestTrainingEpochs(trainingDataAccuracyResults, testingDataAccuracyResults, 50, "Accuracy Over Epochs Against Test with 100 Hidden Neurons 50% of the Training Data")
+    #
+    # #  Final Test with Full Trained Model (50) epochs
+    # final_test_batch_two = 0
+    # finalTestingDataAccuracyResults = []
+    # # run the trained model against the test data
+    # normalizedFinalTestInputs = shuffleTestData()
+    #
+    # Y_Finaltest = getTestingLabels(normalizedFinalTestInputs)
+    # x_Finaltest = getTestingInputs(normalizedFinalTestInputs)
+    #
+    # while final_test_batch_two < len(normalizedFinalTestInputs):
+    #     # print("batch:" +  str(batch))
+    #     #  forward pass through the connected input layer and connected layer.
+    #
+    #     #  notice the truth to add to the perceptronLayer's confusion matrix
+    #     # data structure
+    #     perceptronLayerTwo.forward(x_Finaltest[final_test_batch_two], True)
+    #
+    #     #  convert truth value
+    #     test_groundTruth = perceptronOptimizer.convertTruth(Y_Finaltest[final_test_batch_two])
+    #
+    #     # appends the y_test_truth logits into the truths list for confusion matrix
+    #     perceptronLayerTwo.y_truths.append(test_groundTruth)
+    #
+    #     #  backward pass will update the current neuron
+    #     #  update it's weights based on error.
+    #     perceptronOptimizer.backward(perceptronLayerTwo, test_groundTruth, x_Finaltest[final_test_batch_two])
+    #
+    #     # after each epoch calculate the accuracy of the training data with this model
+    #     perceptronLayerTwo.displayAccuracy("Full Trained Test Model")
+    #     final_test_batch_two += 1
+    # finalTestingDataAccuracyResults.append(perceptronLayerTwo.accuracy)
+    # perceptronLayerTwo.clearAccuracy()
+    #
+    # perceptronLayerTwo.plotConfusionMatrix(perceptronLayerTwo.calculateConfusionMatrix(),"Trained Model 100 Hidden Neurons Provided 50% Training Examples")
+
+
+
 
 
 
